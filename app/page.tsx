@@ -14,6 +14,48 @@ const FIXED_GENERATION_CONFIG = {
   aspectRatio: "16:9",
 } as const;
 
+// 客户端图片压缩：缩放到最长边不超过 MAX_DIM px，转为 JPEG 减小体积
+const MAX_DIM = 1024;
+const JPEG_QUALITY = 0.85;
+
+async function compressImage(file: File): Promise<File> {
+  // 只处理超过限制的图片，小图直接返回
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let { width, height } = img;
+      if (width <= MAX_DIM && height <= MAX_DIM) {
+        resolve(file);
+        return;
+      }
+      if (width > height) {
+        height = Math.round((height / width) * MAX_DIM);
+        width = MAX_DIM;
+      } else {
+        width = Math.round((width / height) * MAX_DIM);
+        height = MAX_DIM;
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(img, 0, 0, width, height);
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) { resolve(file); return; }
+          resolve(new File([blob], file.name.replace(/\.\w+$/, ".jpg"), { type: "image/jpeg" }));
+        },
+        "image/jpeg",
+        JPEG_QUALITY,
+      );
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+    img.src = url;
+  });
+}
+
 const MODEL_OPTIONS = [
   { value: "gemini-3-pro-image", label: "Nano Banana Pro" },
 ] as const;
@@ -870,7 +912,7 @@ export default function Home() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [lightboxOpen, previewReference, results.length]);
 
-  const replaceReference = (
+  const replaceReference = async (
     item: ReferenceItem,
     event: ChangeEvent<HTMLInputElement>,
   ) => {
@@ -886,14 +928,15 @@ export default function Home() {
     }
 
     setError("");
-    const src = URL.createObjectURL(file);
+    const compressed = await compressImage(file);
+    const src = URL.createObjectURL(compressed);
     setReferences((current) =>
       current.map((reference) => {
         if (reference.id !== item.id) return reference;
         if (reference.file && reference.src.startsWith("blob:")) {
           URL.revokeObjectURL(reference.src);
         }
-        return { ...reference, file, src, filename: file.name };
+        return { ...reference, file: compressed, src, filename: compressed.name };
       }),
     );
     event.target.value = "";
@@ -912,11 +955,12 @@ export default function Home() {
           throw new Error(`无法读取默认参考图：${reference.label}`);
         }
         const blob = await response.blob();
+        const compressed = await compressImage(
+          new File([blob], reference.filename, { type: blob.type || "image/png" }),
+        );
         formData.append(
           reference.field,
-          new File([blob], reference.filename, {
-            type: blob.type || "image/png",
-          }),
+          compressed,
           reference.filename,
         );
       }
