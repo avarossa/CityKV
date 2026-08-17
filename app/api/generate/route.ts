@@ -101,7 +101,7 @@ export async function POST(request: Request): Promise<Response> {
         prompt,
         referenceImages: referenceImages.length ? referenceImages : undefined,
         aspectRatio: "16:9",
-        imageSize: "2K",
+        imageSize: "1K",
       }),
     );
 
