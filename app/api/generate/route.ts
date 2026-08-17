@@ -24,26 +24,23 @@ async function compressToWebP(
 }
 
 /**
- * 从磁盘加载参考图并压缩为适合发送给 Gemini 的尺寸。
- * 避免浏览器→服务器的重复上传。
+ * 从磁盘加载预压缩的参考图（1024px JPEG，已提前生成）。
+ * 避免每次请求都用 sharp 重新压缩，节省 5-10 秒 CPU 时间。
  */
-async function loadRefFromDisk(
+function loadRefFromDisk(
   filename: string,
-): Promise<{ data: string; mimeType: string }> {
-  const filePath = path.join(process.cwd(), "public", "references", filename);
-  if (!fs.existsSync(filePath)) {
-    return null as unknown as { data: string; mimeType: string };
+): { data: string; mimeType: string } | null {
+  // 优先用预压缩的小图
+  const smallName = filename.replace(".webp", ".jpg");
+  const smallPath = path.join(process.cwd(), "public", "references", "small", smallName);
+  if (fs.existsSync(smallPath)) {
+    const buffer = fs.readFileSync(smallPath);
+    return {
+      data: buffer.toString("base64"),
+      mimeType: "image/jpeg",
+    };
   }
-  const buffer = fs.readFileSync(filePath);
-  // 压缩到 1024px，减少发送给 Gemini 的数据量
-  const compressed = await sharp(buffer)
-    .resize({ width: 1024, withoutEnlargement: true })
-    .jpeg({ quality: 80 })
-    .toBuffer();
-  return {
-    data: compressed.toString("base64"),
-    mimeType: "image/jpeg",
-  };
+  return null;
 }
 
 const REF_FILES = {
@@ -91,8 +88,8 @@ export async function POST(request: Request): Promise<Response> {
           mimeType: "image/jpeg",
         });
       } else {
-        // 从磁盘加载默认参考图
-        const ref = await loadRefFromDisk(filename);
+        // 从磁盘加载预压缩的默认参考图
+        const ref = loadRefFromDisk(filename);
         if (ref) referenceImages.push(ref);
       }
     }
