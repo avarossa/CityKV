@@ -945,24 +945,10 @@ export default function Home() {
   const appendReferenceFiles = useCallback(
     async (formData: FormData) => {
       for (const reference of references) {
+        // 仅上传用户替换过的图片，默认参考图由服务端直接从磁盘加载
         if (reference.file) {
           formData.append(reference.field, reference.file, reference.filename);
-          continue;
         }
-
-        const response = await fetch(reference.src);
-        if (!response.ok) {
-          throw new Error(`无法读取默认参考图：${reference.label}`);
-        }
-        const blob = await response.blob();
-        const compressed = await compressImage(
-          new File([blob], reference.filename, { type: blob.type || "image/png" }),
-        );
-        formData.append(
-          reference.field,
-          compressed,
-          reference.filename,
-        );
       }
     },
     [references],

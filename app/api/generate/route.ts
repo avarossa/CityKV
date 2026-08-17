@@ -1,4 +1,6 @@
 import sharp from "sharp";
+import fs from "fs";
+import path from "path";
 import { generateImage } from "../gemini";
 
 export const dynamic = "force-dynamic";
@@ -22,10 +24,41 @@ async function compressToWebP(
 }
 
 /**
+ * 从磁盘加载参考图并压缩为适合发送给 Gemini 的尺寸。
+ * 避免浏览器→服务器的重复上传。
+ */
+async function loadRefFromDisk(
+  filename: string,
+): Promise<{ data: string; mimeType: string }> {
+  const filePath = path.join(process.cwd(), "public", "references", filename);
+  if (!fs.existsSync(filePath)) {
+    return null as unknown as { data: string; mimeType: string };
+  }
+  const buffer = fs.readFileSync(filePath);
+  // 压缩到 1024px，减少发送给 Gemini 的数据量
+  const compressed = await sharp(buffer)
+    .resize({ width: 1024, withoutEnlargement: true })
+    .jpeg({ quality: 80 })
+    .toBuffer();
+  return {
+    data: compressed.toString("base64"),
+    mimeType: "image/jpeg",
+  };
+}
+
+const REF_FILES = {
+  layout: "1_layout.webp",
+  kv_ref_1: "2_ref.webp",
+  heart: "3_heart.webp",
+  city_landmark: "4_landmark.webp",
+};
+
+/**
  * POST /api/generate
  *
- * 接收 FormData（prompt + model + 参考图文件），
- * 调用 Gemini Interactions API 生成图片。
+ * 接收 FormData（prompt + model），
+ * 参考图从服务器磁盘直接加载，避免浏览器上传。
+ * 如果用户替换了参考图，才从 FormData 中读取。
  */
 export async function POST(request: Request): Promise<Response> {
   try {
@@ -41,19 +74,26 @@ export async function POST(request: Request): Promise<Response> {
       );
     }
 
-    // 提取所有参考图文件（base64 编码）
+    // 参考图：优先从磁盘加载（默认图片），如果用户替换了则从 FormData 读取
     const referenceImages: Array<{ data: string; mimeType: string }> = [];
-    const fileFields = ["layout", "kv_ref_1", "heart", "city_landmark"];
 
-    for (const field of fileFields) {
+    for (const [field, filename] of Object.entries(REF_FILES)) {
       const file = formData.get(field);
-      if (file instanceof File) {
+      if (file instanceof File && file.size > 0) {
+        // 用户上传了自定义图片，使用上传的文件
         const buffer = await file.arrayBuffer();
-        const base64 = Buffer.from(buffer).toString("base64");
+        const compressed = await sharp(Buffer.from(buffer))
+          .resize({ width: 1024, withoutEnlargement: true })
+          .jpeg({ quality: 80 })
+          .toBuffer();
         referenceImages.push({
-          data: base64,
-          mimeType: file.type || "image/png",
+          data: compressed.toString("base64"),
+          mimeType: "image/jpeg",
         });
+      } else {
+        // 从磁盘加载默认参考图
+        const ref = await loadRefFromDisk(filename);
+        if (ref) referenceImages.push(ref);
       }
     }
 
