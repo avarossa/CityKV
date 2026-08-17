@@ -1124,7 +1124,7 @@ export default function Home() {
       const formData = new FormData();
       formData.append("prompt", resolvedPrompt);
       formData.append("model", DEFAULT_MODEL);
-      formData.append("count", "3");
+      formData.append("count", "1");
       await appendReferenceFiles(formData);
 
       setEvents((current) => [
@@ -1807,7 +1807,7 @@ export default function Home() {
   model: ${DEFAULT_MODEL}
   resolution: ${FIXED_GENERATION_CONFIG.resolution}
   aspect_ratio: ${FIXED_GENERATION_CONFIG.aspectRatio}
-  count: 3`}</code></pre>
+  count: 1`}</code></pre>
                   <MarkdownPromptEditor
                     template={prompt}
                     placeholders={promptPlaceholders}

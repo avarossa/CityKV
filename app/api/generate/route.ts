@@ -16,7 +16,7 @@ export async function POST(request: Request): Promise<Response> {
     const formData = await request.formData();
     const prompt = formData.get("prompt")?.toString();
     const model = formData.get("model")?.toString() || "gemini-3-pro-image";
-    const count = parseInt(formData.get("count")?.toString() || "3", 10);
+    const count = parseInt(formData.get("count")?.toString() || "1", 10);
 
     if (!prompt) {
       return Response.json(
@@ -42,7 +42,7 @@ export async function POST(request: Request): Promise<Response> {
     }
 
     // 并发生成指定数量的图片
-    const generations = Array.from({ length: Math.min(count, 3) }, () =>
+    const generations = Array.from({ length: Math.min(count, 1) }, () =>
       generateImage({
         model: model,
         prompt,
