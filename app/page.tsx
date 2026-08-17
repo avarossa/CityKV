@@ -780,7 +780,7 @@ export default function Home() {
     parseLandmarks(DEFAULT_LANDMARKS),
   );
   const [landmarkAction, setLandmarkAction] = useState<
-    "suggest" | "generate" | null
+    "suggest" | "generate" | "heart" | null
   >(null);
   const [landmarkMessage, setLandmarkMessage] = useState("");
   const [suggestPrompt, setSuggestPrompt] = useState(DEFAULT_SUGGEST_PROMPT);
