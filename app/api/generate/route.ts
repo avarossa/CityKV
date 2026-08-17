@@ -63,6 +63,8 @@ export async function POST(request: Request): Promise<Response> {
     const prompt = formData.get("prompt")?.toString();
     const model = formData.get("model")?.toString() || "gemini-3-pro-image";
     const count = parseInt(formData.get("count")?.toString() || "1", 10);
+    const aspectRatio = formData.get("aspect_ratio")?.toString() || "16:9";
+    const imageSize = formData.get("image_size")?.toString() || "1K";
 
     if (!prompt) {
       return Response.json(
@@ -94,14 +96,14 @@ export async function POST(request: Request): Promise<Response> {
       }
     }
 
-    // 并发生成指定数量的图片
-    const generations = Array.from({ length: Math.min(count, 1) }, () =>
+    // 并发生成指定数量的图片（最多 2 张）
+    const generations = Array.from({ length: Math.min(count, 2) }, () =>
       generateImage({
         model: model,
         prompt,
         referenceImages: referenceImages.length ? referenceImages : undefined,
-        aspectRatio: "16:9",
-        imageSize: "1K",
+        aspectRatio: aspectRatio,
+        imageSize: imageSize,
       }),
     );
 

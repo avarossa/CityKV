@@ -445,7 +445,7 @@ const DEFAULT_HEART_PROMPT = `
 
 function parseLandmarks(text: string): string[] {
   return text
-    .split("\n")
+    .split(/[、\n]/)
     .map((line) => line.replace(/^\d+\.\s*/, "").trim())
     .filter(Boolean);
 }
@@ -1096,6 +1096,96 @@ export default function Home() {
     }
   };
 
+  const generateHeartImage = async () => {
+    if (landmarkAction) return;
+    if (!city.trim()) {
+      setLandmarkMessage("请先填写活动城市。");
+      return;
+    }
+    const heartReference = references.find(
+      (reference) => reference.field === "heart",
+    );
+    if (!heartReference) {
+      setLandmarkMessage("未找到爱心参考图。");
+      return;
+    }
+    setLandmarkAction("heart");
+    setLandmarkMessage("正在通过 Gemini 生成城市爱心…");
+    try {
+      const resolvedHeart = heartPrompt
+        .replaceAll("{{城市}}", city.trim())
+        .replaceAll("{{标志元素}}", landmarks.join("、"));
+      const formData = new FormData();
+      formData.append("prompt", resolvedHeart);
+      formData.append("model", "gemini-3-pro-image");
+      formData.append("count", "1");
+      formData.append("aspect_ratio", "1:1");
+      formData.append("image_size", "1K");
+      // 发送爱心参考图
+      let file = heartReference.file;
+      if (!file) {
+        const sourceResponse = await fetch(heartReference.src);
+        if (!sourceResponse.ok) throw new Error("无法读取爱心参考图");
+        const blob = await sourceResponse.blob();
+        file = new File([blob], heartReference.filename, {
+          type: blob.type || "image/png",
+        });
+      }
+      formData.append("heart", file, file.name);
+      // 也发送 KV 参考图
+      const kvRef = references.find((r) => r.field === "kv_ref_1");
+      if (kvRef) {
+        let kvFile = kvRef.file;
+        if (!kvFile) {
+          const kvResp = await fetch(kvRef.src);
+          if (kvResp.ok) {
+            const kvBlob = await kvResp.blob();
+            kvFile = new File([kvBlob], kvRef.filename, { type: kvBlob.type || "image/png" });
+          }
+        }
+        if (kvFile) formData.append("kv_ref_1", kvFile, kvFile.name);
+      }
+
+      const response = await fetch("/api/generate", {
+        method: "POST",
+        body: formData,
+      });
+      const payload = await readApiResponse<{
+        images?: Array<{ mimeType: string; data: string }>;
+        error?: string;
+      }>(response);
+      if (!response.ok) {
+        throw new Error(payload.error || "城市爱心生成失败");
+      }
+      const images = payload.images;
+      if (!images?.length) {
+        throw new Error("Gemini 未返回城市爱心图片");
+      }
+      // 替换爱心参考图
+      setReferences((current) =>
+        current.map((reference) => {
+          if (reference.field !== "heart") return reference;
+          if (reference.file && reference.src.startsWith("blob:")) {
+            URL.revokeObjectURL(reference.src);
+          }
+          return {
+            ...reference,
+            file: null,
+            src: images[0].data,
+            filename: "heart-generated.png",
+          };
+        }),
+      );
+      setLandmarkMessage("城市爱心图片已生成并替换参考图。");
+    } catch (caughtError) {
+      setLandmarkMessage(
+        caughtError instanceof Error ? caughtError.message : "城市爱心生成失败",
+      );
+    } finally {
+      setLandmarkAction(null);
+    }
+  };
+
   const handleGenerate = async () => {
     if (isGenerating) return;
     if (servicePhase !== "online") {
@@ -1104,13 +1194,13 @@ export default function Home() {
     }
     setIsGenerating(true);
     setError("");
-    setEvents([{ at: Date.now(), message: "正在准备 4 张参考图，将生成 3 个版本…" }]);
+    setEvents([{ at: Date.now(), message: "正在准备 4 张参考图，将生成 2 个版本…" }]);
 
     try {
       const formData = new FormData();
       formData.append("prompt", resolvedPrompt);
       formData.append("model", DEFAULT_MODEL);
-      formData.append("count", "1");
+      formData.append("count", "2");
       await appendReferenceFiles(formData);
 
       setEvents((current) => [
@@ -1433,7 +1523,7 @@ export default function Home() {
                   <div className={`landmark-cli compact-cli ${cliSuggestCollapsed ? "cli-collapsed" : ""}`}>
                     <div className="landmark-cli-head" onClick={() => setCliSuggestCollapsed((v) => !v)} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setCliSuggestCollapsed((v) => !v); } }} aria-expanded={!cliSuggestCollapsed}>
                       <span className="landmark-cli-label">
-                          CLI 指令
+                          Gemini 指令
                         </span>
                         <span className="cli-toggle" aria-hidden="true">{cliSuggestCollapsed ? "▸" : "▾"}</span>
                     </div>
@@ -1509,15 +1599,18 @@ export default function Home() {
                   <div className="landmark-action-wrap">
                     <button
                       type="button"
-                      className="secondary-action"
-                      disabled
+                      className="primary-action"
+                      onClick={generateHeartImage}
+                      disabled={Boolean(landmarkAction)}
                     >
-                      生成城市爱心
+                      {landmarkAction === "heart"
+                        ? "正在生成城市爱心…"
+                        : "生成城市爱心"}
                     </button>
                     <div className={`landmark-cli compact-cli ${cliHeartCollapsed ? "cli-collapsed" : ""}`}>
                       <div className="landmark-cli-head" onClick={() => setCliHeartCollapsed((v) => !v)} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setCliHeartCollapsed((v) => !v); } }} aria-expanded={!cliHeartCollapsed}>
                         <span className="landmark-cli-label">
-                          CLI 指令
+                          Gemini 指令
                         </span>
                         <span className="cli-toggle" aria-hidden="true">{cliHeartCollapsed ? "▸" : "▾"}</span>
                       </div>
@@ -1525,7 +1618,7 @@ export default function Home() {
                         <>
                           <pre className="cli-cmd-block"><code>{`POST /api/generate
   model: gemini-3-pro-image
-  resolution: 2K
+  resolution: 1K
   aspect_ratio: 1:1
   count: 1`}</code></pre>
                           <MarkdownPromptEditor
@@ -1605,7 +1698,7 @@ export default function Home() {
                     <div className={`landmark-cli compact-cli ${cliGenerateCollapsed ? "cli-collapsed" : ""}`}>
                       <div className="landmark-cli-head" onClick={() => setCliGenerateCollapsed((v) => !v)} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setCliGenerateCollapsed((v) => !v); } }} aria-expanded={!cliGenerateCollapsed}>
                         <span className="landmark-cli-label">
-                          CLI 指令
+                          Gemini 指令
                         </span>
                         <span className="cli-toggle" aria-hidden="true">{cliGenerateCollapsed ? "▸" : "▾"}</span>
                       </div>
@@ -1613,7 +1706,7 @@ export default function Home() {
                         <>
                           <pre className="cli-cmd-block"><code>{`POST /api/landmarks/generate
   model: gemini-3-pro-image
-  resolution: 2K
+  resolution: 1K
   aspect_ratio: 1:1`}</code></pre>
                           <MarkdownPromptEditor
                             template={generatePrompt}
@@ -1783,7 +1876,7 @@ export default function Home() {
             <div className={`landmark-cli prompt-cli ${cliCollapsed ? "cli-collapsed" : ""}`}>
               <div className="landmark-cli-head" onClick={() => setCliCollapsed((v) => !v)} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setCliCollapsed((v) => !v); } }} aria-expanded={!cliCollapsed}>
                 <span className="landmark-cli-label">
-                  CLI 指令
+                  Gemini 指令
                 </span>
                 <span className="cli-toggle" aria-hidden="true">{cliCollapsed ? "▸" : "▾"}</span>
               </div>
@@ -1791,9 +1884,9 @@ export default function Home() {
                 <>
                   <pre className="cli-cmd-block"><code>{`POST /api/generate
   model: ${DEFAULT_MODEL}
-  resolution: ${FIXED_GENERATION_CONFIG.resolution}
+  resolution: 1K
   aspect_ratio: ${FIXED_GENERATION_CONFIG.aspectRatio}
-  count: 1`}</code></pre>
+  count: 2`}</code></pre>
                   <MarkdownPromptEditor
                     template={prompt}
                     placeholders={promptPlaceholders}

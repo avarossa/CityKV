@@ -44,7 +44,7 @@ export async function POST(request: Request): Promise<Response> {
       prompt: fullPrompt,
       referenceImages: referenceImages.length ? referenceImages : undefined,
       aspectRatio: "1:1",
-      imageSize: "2K",
+      imageSize: "1K",
     });
 
     return Response.json({
