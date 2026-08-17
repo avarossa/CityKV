@@ -22,12 +22,19 @@ async function sleep(ms: number): Promise<void> {
 }
 
 function isRetryableError(status: number, body: string): boolean {
-  // 500 服务端错误 + 高负载/限流
+  // 500 服务端错误 + 高负载/限流 / 429 配额超限
   if (status >= 500) return true;
   if (status === 429) return true;
   // 高负载提示
   if (body.includes("high demand") || body.includes("api_error")) return true;
   return false;
+}
+
+function parseRetrySeconds(body: string): number | null {
+  // 解析 "Please retry in 23.058236578s" 中的秒数
+  const match = body.match(/retry in ([\d.]+)s/);
+  if (match) return Math.ceil(parseFloat(match[1]));
+  return null;
 }
 
 // ---- 图片生成（Interactions API） ----
@@ -81,10 +88,6 @@ export async function generateImage(
   let lastError: Error | undefined;
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    if (attempt > 0) {
-      await sleep(RETRY_DELAY_MS * Math.pow(2, attempt - 1));
-    }
-
     const response = await fetch(`${GEMINI_API_BASE}/interactions`, {
       method: "POST",
       headers: {
@@ -135,6 +138,13 @@ export async function generateImage(
     if (!isRetryableError(response.status, errorText)) {
       throw lastError;
     }
+
+    // 429 配额超限时使用 API 返回的建议等待时间，否则指数退避
+    const retrySeconds = parseRetrySeconds(errorText);
+    const delay = retrySeconds
+      ? retrySeconds * 1000
+      : RETRY_DELAY_MS * Math.pow(2, attempt);
+    await sleep(delay);
   }
 
   throw lastError!;
