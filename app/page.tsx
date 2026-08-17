@@ -1170,7 +1170,7 @@ export default function Home() {
           }
           return {
             ...reference,
-            file: null,
+            file: undefined,
             src: images[0].data,
             filename: "heart-generated.png",
           };
