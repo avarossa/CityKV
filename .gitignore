@@ -3,11 +3,8 @@
 .env
 .env.*.local
 
-# 构建产物
-dist/
-build/
+# Next.js 构建产物
 .next/
-*.tsbuildinfo
 
 # 依赖
 node_modules/
@@ -15,3 +12,9 @@ node_modules/
 # 缓存和工具目录
 .vinext/
 .wrangler/
+dist/
+build/
+*.tsbuildinfo
+
+# 系统文件
+.DS_Store
