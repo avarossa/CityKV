@@ -1454,7 +1454,7 @@ export default function Home() {
                     {!cliSuggestCollapsed && (
                       <>
                         <pre className="cli-cmd-block"><code>{`POST /api/landmarks/suggest
-  model: gemini-2.5-flash
+  model: gemini-3.6-flash
   city: {{城市}}`}</code></pre>
                         <MarkdownPromptEditor
                           template={suggestPrompt}

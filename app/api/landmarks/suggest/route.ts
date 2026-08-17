@@ -23,7 +23,7 @@ export async function POST(request: Request): Promise<Response> {
     }
 
     const result = await generateText({
-      model: "gemini-2.5-flash",
+      model: "gemini-3.6-flash",
       prompt,
       systemInstruction:
         "你是一个专业的城市地理和旅游专家。请根据用户提供的城市名称，推荐该城市最具代表性的9个标志性建筑、景点或元素。每个元素一行，格式为：序号. 元素名称。只返回列表，不要额外解释。",
