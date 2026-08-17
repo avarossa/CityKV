@@ -6,6 +6,8 @@
  */
 
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 1000;
 
 function getApiKey(): string {
   const key = process.env.GEMINI_API_KEY;
@@ -13,6 +15,19 @@ function getApiKey(): string {
     throw new Error("GEMINI_API_KEY 环境变量未配置");
   }
   return key;
+}
+
+async function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableError(status: number, body: string): boolean {
+  // 500 服务端错误 + 高负载/限流
+  if (status >= 500) return true;
+  if (status === 429) return true;
+  // 高负载提示
+  if (body.includes("high demand") || body.includes("api_error")) return true;
+  return false;
 }
 
 // ---- 图片生成（Interactions API） ----
@@ -63,53 +78,66 @@ export async function generateImage(
     },
   };
 
-  const response = await fetch(`${GEMINI_API_BASE}/interactions`, {
-    method: "POST",
-    headers: {
-      "x-goog-api-key": apiKey,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
+  let lastError: Error | undefined;
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(
-      `Gemini API 错误 (${response.status}): ${errorText.slice(0, 500)}`,
-    );
-  }
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      await sleep(RETRY_DELAY_MS * Math.pow(2, attempt - 1));
+    }
 
-  const result = await response.json();
+    const response = await fetch(`${GEMINI_API_BASE}/interactions`, {
+      method: "POST",
+      headers: {
+        "x-goog-api-key": apiKey,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
 
-  // 解析 Interactions API 的 steps 响应结构
-  // 原始 REST API 没有 output_image 便捷属性，需要遍历 steps 提取
-  let imageData: string | undefined;
-  let mimeType = "image/jpeg";
+    if (response.ok) {
+      const result = await response.json();
 
-  const steps = result.steps;
-  if (steps && Array.isArray(steps)) {
-    for (const step of steps) {
-      if (step.type === "model_output" && step.content) {
-        for (const block of step.content) {
-          if (block.type === "image" && block.data) {
-            imageData = block.data;
-            mimeType = block.mime_type || "image/jpeg";
-            break;
+      // 解析 Interactions API 的 steps 响应结构
+      let imageData: string | undefined;
+      let mimeType = "image/jpeg";
+
+      const steps = result.steps;
+      if (steps && Array.isArray(steps)) {
+        for (const step of steps) {
+          if (step.type === "model_output" && step.content) {
+            for (const block of step.content) {
+              if (block.type === "image" && block.data) {
+                imageData = block.data;
+                mimeType = block.mime_type || "image/jpeg";
+                break;
+              }
+            }
           }
+          if (imageData) break;
         }
       }
-      if (imageData) break;
+
+      if (!imageData) {
+        throw new Error("Gemini API 未返回图片数据，响应结构: " + JSON.stringify(result).slice(0, 300));
+      }
+
+      return {
+        imageBase64: imageData,
+        mimeType,
+      };
+    }
+
+    const errorText = await response.text();
+    lastError = new Error(
+      `Gemini API 错误 (${response.status}): ${errorText.slice(0, 500)}`,
+    );
+
+    if (!isRetryableError(response.status, errorText)) {
+      throw lastError;
     }
   }
 
-  if (!imageData) {
-    throw new Error("Gemini API 未返回图片数据，响应结构: " + JSON.stringify(result).slice(0, 300));
-  }
-
-  return {
-    imageBase64: imageData,
-    mimeType,
-  };
+  throw lastError!;
 }
 
 // ---- 文本生成（generateContent API） ----
