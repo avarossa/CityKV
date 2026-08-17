@@ -1,15 +1,31 @@
+import sharp from "sharp";
 import { generateImage } from "../gemini";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * 将 base64 图片压缩为 WebP，大幅降低传输体积。
+ * 2K 原图 ~2MB → WebP ~150KB，在 1 Mbps 带宽下从 20s 降到 1.5s。
+ */
+async function compressToWebP(
+  base64Data: string,
+): Promise<{ data: string; mimeType: string }> {
+  const buffer = Buffer.from(base64Data, "base64");
+  const compressed = await sharp(buffer)
+    .resize({ width: 1280, withoutEnlargement: true })
+    .webp({ quality: 82 })
+    .toBuffer();
+  return {
+    data: `data:image/webp;base64,${compressed.toString("base64")}`,
+    mimeType: "image/webp",
+  };
+}
 
 /**
  * POST /api/generate
  *
  * 接收 FormData（prompt + model + 参考图文件），
  * 调用 Gemini Interactions API 生成图片。
- *
- * 由于 Gemini API 每次生成 1 张图片，前端需要 3 个版本时，
- * 会并发 3 次请求，返回 3 张 base64 图片。
  */
 export async function POST(request: Request): Promise<Response> {
   try {
@@ -54,11 +70,10 @@ export async function POST(request: Request): Promise<Response> {
 
     const results = await Promise.all(generations);
 
-    // 返回 base64 图片数据，前端负责展示
-    const images = results.map((r) => ({
-      mimeType: r.mimeType,
-      data: `data:${r.mimeType};base64,${r.imageBase64}`,
-    }));
+    // 压缩为 WebP 后返回，大幅减少传输体积
+    const images = await Promise.all(
+      results.map((r) => compressToWebP(r.imageBase64)),
+    );
 
     return Response.json({
       status: "completed",
